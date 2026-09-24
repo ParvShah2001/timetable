@@ -1,8 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useApp } from '../store';
 import { useAuth } from '../context/AuthContext';
 import type { GridInterval, TimeRangePreset } from '../types';
 import { exportToJSON, importFromJSON } from '../utils';
+import { SUPABASE_SQL_SETUP } from '../lib/supabase';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -10,9 +11,10 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, syncStatus, syncError, refreshEvents } = useApp();
   const { user, isConfigured, signOut, resetConfig } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -136,9 +138,35 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           <section className="p-3.5 bg-gray-50/90 rounded-xl border border-gray-200/80 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Account & Database</span>
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                {isConfigured ? 'Supabase Sync Active' : 'Offline Mode'}
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  syncStatus === 'synced'
+                    ? 'bg-green-100 text-green-700'
+                    : syncStatus === 'syncing'
+                    ? 'bg-blue-100 text-blue-700'
+                    : syncStatus === 'error'
+                    ? 'bg-rose-100 text-rose-700'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    syncStatus === 'synced'
+                      ? 'bg-green-500 animate-pulse'
+                      : syncStatus === 'syncing'
+                      ? 'bg-blue-500 animate-ping'
+                      : syncStatus === 'error'
+                      ? 'bg-rose-500'
+                      : 'bg-gray-400'
+                  }`}
+                />
+                {syncStatus === 'synced'
+                  ? 'Cloud Synced'
+                  : syncStatus === 'syncing'
+                  ? 'Syncing...'
+                  : syncStatus === 'error'
+                  ? 'Sync Issue'
+                  : 'Offline Mode'}
               </span>
             </div>
             
@@ -147,9 +175,45 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               <div className="font-semibold text-gray-800 truncate" title={user?.email || ''}>
                 {user?.email || 'Guest User'}
               </div>
+              {syncError && (
+                <div className="mt-1 text-[11px] text-rose-600 bg-rose-50 border border-rose-200 p-1.5 rounded-lg leading-tight">
+                  {syncError}
+                </div>
+              )}
             </div>
 
             <div className="pt-2 border-t border-gray-200/60 flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => refreshEvents()}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:text-blue-700 hover:bg-blue-50/60 rounded-lg transition-colors border border-gray-200/60 bg-white"
+              >
+                <span className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Sync Now with Supabase
+                </span>
+                <span className="text-[10px] text-gray-400">Refresh</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(SUPABASE_SQL_SETUP);
+                  setCopiedSql(true);
+                  setTimeout(() => setCopiedSql(false), 2500);
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:text-purple-700 hover:bg-purple-50/60 rounded-lg transition-colors border border-gray-200/60 bg-white"
+              >
+                <span className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                  </svg>
+                  {copiedSql ? '✓ SQL Copied to Clipboard!' : 'Copy Supabase SQL Setup (Table & Realtime)'}
+                </span>
+              </button>
+
               <a
                 href="https://supabase.com/dashboard"
                 target="_blank"

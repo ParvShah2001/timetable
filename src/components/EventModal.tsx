@@ -150,7 +150,12 @@ export default function EventModal({
 
   const handleDuplicate = () => {
     if (editEvent) {
-      dispatch({ type: 'DUPLICATE_EVENT', weekKey: currentWeekKey, eventId: editEvent.id });
+      const dup: TimetableEvent = {
+        ...editEvent,
+        id: generateId(),
+        title: `${editEvent.title} (Copy)`,
+      };
+      dispatch({ type: 'ADD_EVENT', weekKey: currentWeekKey, event: dup });
       onClose();
     }
   };

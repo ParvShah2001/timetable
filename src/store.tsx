@@ -16,6 +16,7 @@ import {
   upsertEvent,
   deleteEvent,
   clearWeekEvents,
+  subscribeToUserEvents,
 } from './lib/supabase';
 
 /* ── Actions ── */
@@ -268,57 +269,94 @@ function reducer(state: AppState, action: Action): AppState {
 
 /* ── Context ── */
 
+export type SyncStatus = 'synced' | 'syncing' | 'error' | 'offline';
+
 interface AppContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
   currentWeekKey: WeekKey;
   currentEvents: TimetableEvent[];
   isLoadingEvents: boolean;
+  syncStatus: SyncStatus;
+  syncError: string | null;
+  refreshEvents: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, isConfigured } = useAuth();
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(isConfigured ? 'syncing' : 'offline');
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const cwk = weekKey(state.currentWeek.year, state.currentWeek.weekNumber);
   const currentEvents = state.events[cwk] || [];
 
-  // When user logs in or changes, fetch their individual timetable from Supabase
+  const refreshEvents = async () => {
+    if (!user) return;
+    setSyncStatus('syncing');
+    try {
+      const res = await fetchUserEvents(user.id);
+      if (res.error) {
+        setSyncStatus('error');
+        setSyncError(res.error);
+      } else {
+        setSyncStatus('synced');
+        setSyncError(null);
+        dispatch({ type: 'LOAD_USER_EVENTS', events: res.events });
+      }
+    } catch (err: any) {
+      setSyncStatus('error');
+      setSyncError(err?.message || 'Sync failed');
+    } finally {
+      setIsLoadingEvents(false);
+    }
+  };
+
+  // Sync lifecycle: initial fetch, real-time subscription, tab-focus refresh, interval poll
   useEffect(() => {
     if (!user) {
       dispatch({ type: 'RESET_STATE' });
+      setSyncStatus(isConfigured ? 'synced' : 'offline');
       return;
     }
 
-    let isMounted = true;
-    setIsLoadingEvents(true);
-
-    // 1. First check local user backup for instant offline render
+    // 1. Initial cached render for instant responsiveness
     const cached = loadUserState(user.id);
     if (cached?.events) {
       dispatch({ type: 'LOAD_USER_EVENTS', events: cached.events });
     }
 
-    // 2. Fetch fresh user events from Supabase
-    fetchUserEvents(user.id).then((cloudEvents) => {
-      if (!isMounted) return;
-      if (cloudEvents && Object.keys(cloudEvents).length > 0) {
-        dispatch({ type: 'LOAD_USER_EVENTS', events: cloudEvents });
-      }
-      setIsLoadingEvents(false);
-    }).catch(() => {
-      if (isMounted) setIsLoadingEvents(false);
+    // 2. Fetch fresh cloud events
+    refreshEvents();
+
+    // 3. Real-time subscription: reacts instantly to any changes made on other devices
+    const unsubscribe = subscribeToUserEvents(user.id, () => {
+      refreshEvents();
     });
 
-    return () => {
-      isMounted = false;
+    // 4. Auto-refresh when tab gains focus or user switches back to app
+    const handleFocus = () => refreshEvents();
+    const handleVisibility = () => {
+      if (!document.hidden) refreshEvents();
     };
-  }, [user]);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
-  // Persist state locally per-user
+    // 5. Background sync polling every 30 seconds
+    const interval = setInterval(refreshEvents, 30000);
+
+    return () => {
+      unsubscribe?.();
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+    };
+  }, [user, isConfigured]);
+
+  // Persist state locally per-user for offline backup
   useEffect(() => {
     if (user) {
       saveUserState(state, user.id);
@@ -342,26 +380,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // If user is authenticated, sync with Supabase
     if (user) {
+      setSyncStatus('syncing');
+
+      const handleResult = (res: { success: boolean; error: string | null }) => {
+        if (!res.success && res.error) {
+          setSyncStatus('error');
+          setSyncError(res.error);
+          dispatch({
+            type: 'SET_TOAST',
+            message: `⚠️ Cloud Sync: ${res.error}`,
+          });
+        } else {
+          setSyncStatus('synced');
+          setSyncError(null);
+        }
+      };
+
       if (action.type === 'ADD_EVENT' || action.type === 'UPDATE_EVENT') {
-        upsertEvent(action.event, user.id, action.weekKey);
+        upsertEvent(action.event, user.id, action.weekKey).then(handleResult);
       } else if (action.type === 'MOVE_EVENT') {
         const existing = state.events[action.weekKey] || [];
         const found = existing.find((e) => e.id === action.eventId);
         if (found) {
           const moved = { ...found, day: action.newDay, startTime: action.newStartTime, endTime: action.newEndTime };
-          upsertEvent(moved, user.id, action.weekKey);
+          upsertEvent(moved, user.id, action.weekKey).then(handleResult);
         }
       } else if (action.type === 'RESIZE_EVENT') {
         const existing = state.events[action.weekKey] || [];
         const found = existing.find((e) => e.id === action.eventId);
         if (found) {
           const resized = { ...found, startTime: action.newStartTime, endTime: action.newEndTime };
-          upsertEvent(resized, user.id, action.weekKey);
+          upsertEvent(resized, user.id, action.weekKey).then(handleResult);
         }
       } else if (action.type === 'DELETE_EVENT') {
-        deleteEvent(action.eventId, user.id);
+        deleteEvent(action.eventId, user.id).then(handleResult);
       } else if (action.type === 'CLEAR_WEEK') {
-        clearWeekEvents(action.weekKey, user.id);
+        clearWeekEvents(action.weekKey, user.id).then(handleResult);
+      } else if (action.type === 'DUPLICATE_WEEK') {
+        const events = state.events[action.targetWeekKey] || [];
+        Promise.all(events.map((ev) => upsertEvent(ev, user.id, action.targetWeekKey))).then(() => {
+          setSyncStatus('synced');
+        });
+      } else if (action.type === 'IMPORT_EVENTS') {
+        const promises: Promise<any>[] = [];
+        Object.entries(action.events).forEach(([wk, evList]) => {
+          evList.forEach((ev) => promises.push(upsertEvent(ev, user.id, wk)));
+        });
+        Promise.all(promises).then(() => {
+          setSyncStatus('synced');
+        });
       }
     }
   };
@@ -374,6 +441,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentWeekKey: cwk,
         currentEvents,
         isLoadingEvents,
+        syncStatus,
+        syncError,
+        refreshEvents,
       }}
     >
       {children}
