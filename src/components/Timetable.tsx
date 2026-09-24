@@ -14,7 +14,8 @@ import TimeColumn from './TimeColumn';
 import DayColumn from './DayColumn';
 import CurrentTimeLine from './CurrentTimeLine';
 
-const DAY_HEADER_H = 44;
+const DAY_HEADER_H = 38;
+const BOTTOM_BUFFER_H = 14;
 
 interface TimetableProps {
   onEventEdit: (event: TimetableEvent) => void;
@@ -32,51 +33,75 @@ interface DraggingCardState {
 export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps) {
   const { state, dispatch, currentWeekKey, currentEvents } = useApp();
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const [slotHeight, setSlotHeight] = useState(40);
   const [activeDrag, setActiveDrag] = useState<DraggingCardState | null>(null);
 
-  const { startHour, endHour, gridInterval } = state.settings;
-  const hoursCount = endHour - startHour;
+  const { startHour, gridInterval } = state.settings;
 
-  /* ── Dynamic single-screen fit calculation ── */
+  // Dynamically ensure the timetable includes any event that extends past settings.endHour
+  const maxEventEndHour = useMemo(() => {
+    let maxHour = state.settings.endHour;
+    currentEvents.forEach((ev) => {
+      const endMins = timeToMinutes(ev.endTime);
+      const endH = Math.ceil(endMins / 60);
+      if (endH > maxHour) maxHour = endH;
+    });
+    return Math.min(24, Math.max(state.settings.endHour, maxHour));
+  }, [currentEvents, state.settings.endHour]);
+
+  const effectiveEndHour = maxEventEndHour;
+  const hoursCount = effectiveEndHour - startHour;
+  const totalGridHeight = hoursCount * slotHeight;
+
+  /* ── Dynamic single-screen fit calculation (with phone landscape vertical scrolling) ── */
   const recalcSlotHeight = useCallback(() => {
     if (!containerRef.current) return;
     const h = containerRef.current.clientHeight;
-    const availableGridH = h - DAY_HEADER_H;
+    const availableGridH = Math.max(100, h - DAY_HEADER_H - BOTTOM_BUFFER_H);
     const fitH = availableGridH / hoursCount;
-    setSlotHeight(Math.max(26, fitH));
+
+    // Detect if viewport is in phone landscape or severely height-constrained (< 600px)
+    const isLandscape = window.innerWidth > window.innerHeight;
+    const isLandscapePhone = isLandscape && window.innerHeight < 600;
+
+    if (isLandscapePhone || fitH < 26) {
+      // In phone landscape, enforce comfortable slot height so hours never overlap or get cut,
+      // enabling smooth vertical scrolling while day headers stay permanently visible at the top!
+      setSlotHeight(46);
+    } else {
+      // In portrait / tablet / desktop, fit 100% on the single screen with zero scrolling
+      setSlotHeight(Math.max(20, fitH));
+    }
   }, [hoursCount]);
 
   useLayoutEffect(() => {
     recalcSlotHeight();
     const ro = new ResizeObserver(recalcSlotHeight);
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
+    window.addEventListener('resize', recalcSlotHeight);
+    window.addEventListener('orientationchange', recalcSlotHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', recalcSlotHeight);
+      window.removeEventListener('orientationchange', recalcSlotHeight);
+    };
   }, [recalcSlotHeight]);
 
-  /* ── Determine visible days according to viewMode ── */
-  const allDays = state.settings.showWeekends ? DAYS : WEEKDAYS;
+  /* ── Dynamic visible days based on Show Weekends toggle ── */
+  const visibleDays: DayOfWeek[] = useMemo(
+    () => (state.settings.showWeekends ? DAYS : WEEKDAYS),
+    [state.settings.showWeekends]
+  );
   const dates = useMemo(
     () => getWeekDates(state.currentWeek.year, state.currentWeek.weekNumber),
     [state.currentWeek.year, state.currentWeek.weekNumber]
   );
 
-  const visibleDays: DayOfWeek[] = useMemo(() => {
-    if (state.viewMode === 'day') {
-      return [state.selectedDay];
-    }
-    if (state.viewMode === '3day') {
-      const idx = allDays.indexOf(state.selectedDay);
-      const safeIdx = Math.max(0, Math.min(allDays.length - 3, idx === -1 ? 0 : idx));
-      return allDays.slice(safeIdx, safeIdx + 3);
-    }
-    return allDays;
-  }, [state.viewMode, state.selectedDay, allDays]);
-
   const today = new Date();
 
-  /* ── Drag controller: dashed card follows mouse across grid ── */
+  /* ── Drag controller: dashed card follows mouse/touch with auto-scroll ── */
   const handleCardDragStart = useCallback(
     (event: TimetableEvent, startX: number, startY: number, cardRect: DOMRect) => {
       const startMins = timeToMinutes(event.startTime);
@@ -93,12 +118,14 @@ export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps
         targetEndTime: event.endTime,
       });
 
-      const handlePointerMove = (e: PointerEvent) => {
-        if (!gridContainerRef.current) return;
+      let lastPointer: { clientX: number; clientY: number } | null = { clientX: startX, clientY: startY };
+      let animFrameId: number | null = null;
+
+      const updateDragPosition = (clientX: number, clientY: number) => {
+        if (!gridContainerRef.current || !scrollContainerRef.current) return;
 
         const gridRect = gridContainerRef.current.getBoundingClientRect();
-        const cursorX = e.clientX;
-        const cursorY = e.clientY - gridRect.top;
+        const scrollTop = scrollContainerRef.current.scrollTop;
 
         // Detect which day column the cursor is currently over
         const dayCols = gridContainerRef.current.querySelectorAll('[data-day-column]');
@@ -106,18 +133,19 @@ export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps
 
         dayCols.forEach((col) => {
           const r = col.getBoundingClientRect();
-          if (cursorX >= r.left && cursorX <= r.right) {
+          if (clientX >= r.left && clientX <= r.right) {
             const attr = col.getAttribute('data-day-column');
             if (attr) detectedDay = attr as DayOfWeek;
           }
         });
 
-        // Compute snapped start time from cursor Y
-        const rawMins = startHour * 60 + ((cursorY - grabOffsetY) / slotHeight) * 60;
+        // Compute content Y relative to scrolled timetable
+        const contentY = (clientY - gridRect.top) + scrollTop;
+        const rawMins = startHour * 60 + ((contentY - grabOffsetY) / slotHeight) * 60;
         const snappedStart = snapToGrid(rawMins, gridInterval);
         const clampedStart = Math.max(
           startHour * 60,
-          Math.min(endHour * 60 - duration, snappedStart)
+          Math.min(effectiveEndHour * 60 - duration, snappedStart)
         );
         const clampedEnd = clampedStart + duration;
 
@@ -132,7 +160,54 @@ export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps
         });
       };
 
+      // Auto-scroll loop when dragging near top/bottom edges of the scrollable grid
+      const autoScrollLoop = () => {
+        if (!scrollContainerRef.current || !lastPointer) {
+          animFrameId = requestAnimationFrame(autoScrollLoop);
+          return;
+        }
+
+        const containerRect = scrollContainerRef.current.getBoundingClientRect();
+        const topThreshold = containerRect.top + 50;
+        const bottomThreshold = containerRect.bottom - 50;
+
+        let scrolled = false;
+        if (lastPointer.clientY < topThreshold) {
+          const intensity = Math.min(1, Math.max(0.1, (topThreshold - lastPointer.clientY) / 50));
+          const speed = Math.max(3, Math.round(intensity * 14));
+          const oldScroll = scrollContainerRef.current.scrollTop;
+          scrollContainerRef.current.scrollTop -= speed;
+          if (scrollContainerRef.current.scrollTop !== oldScroll) {
+            scrolled = true;
+          }
+        } else if (lastPointer.clientY > bottomThreshold) {
+          const intensity = Math.min(1, Math.max(0.1, (lastPointer.clientY - bottomThreshold) / 50));
+          const speed = Math.max(3, Math.round(intensity * 14));
+          const oldScroll = scrollContainerRef.current.scrollTop;
+          scrollContainerRef.current.scrollTop += speed;
+          if (scrollContainerRef.current.scrollTop !== oldScroll) {
+            scrolled = true;
+          }
+        }
+
+        if (scrolled) {
+          updateDragPosition(lastPointer.clientX, lastPointer.clientY);
+        }
+
+        animFrameId = requestAnimationFrame(autoScrollLoop);
+      };
+
+      animFrameId = requestAnimationFrame(autoScrollLoop);
+
+      const handlePointerMove = (e: PointerEvent) => {
+        lastPointer = { clientX: e.clientX, clientY: e.clientY };
+        updateDragPosition(e.clientX, e.clientY);
+      };
+
       const handlePointerUp = () => {
+        if (animFrameId !== null) {
+          cancelAnimationFrame(animFrameId);
+        }
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
 
@@ -160,7 +235,7 @@ export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps
       window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp);
     },
-    [dispatch, currentWeekKey, slotHeight, gridInterval, startHour, endHour]
+    [dispatch, currentWeekKey, slotHeight, gridInterval, startHour, effectiveEndHour]
   );
 
   /* ── Drop target slot preview coordinates on the grid ── */
@@ -188,25 +263,79 @@ export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps
   return (
     <div
       ref={containerRef}
-      className="w-full h-full bg-white rounded-xl shadow-sm border border-gray-200/90 flex flex-col overflow-hidden relative select-none"
+      className="w-full h-full bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200/90 flex flex-col overflow-hidden relative select-none"
     >
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Sticky 12-Hour Time Column */}
+      {/* ── Fixed Unified Header Row: Permanently stays at the top, NEVER vanishes ── */}
+      <div
+        style={{ height: `${DAY_HEADER_H}px` }}
+        className="flex flex-shrink-0 border-b border-gray-200 bg-white z-20 shadow-2xs"
+      >
+        {/* Corner TIME header cell */}
+        <div className="w-10 sm:w-14 md:w-16 flex-shrink-0 border-r border-gray-100 flex items-center justify-center bg-white">
+          <span className="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+            TIME
+          </span>
+        </div>
+
+        {/* Day Header Columns */}
+        <div className="flex flex-1 min-w-0">
+          {visibleDays.map((day) => {
+            const date = dates[dayIndex(day)];
+            const isToday =
+              date.getUTCFullYear() === today.getFullYear() &&
+              date.getUTCMonth() === today.getMonth() &&
+              date.getUTCDate() === today.getDate();
+
+            return (
+              <div
+                key={day}
+                className={`flex-1 min-w-0 border-r border-gray-100 last:border-r-0 flex flex-col items-center justify-center transition-colors ${
+                  isToday ? 'bg-blue-50/60' : 'bg-white'
+                }`}
+              >
+                <div className="text-[9px] sm:text-[10px] text-gray-500 uppercase font-bold tracking-wider leading-none">
+                  <span className="sm:hidden">{day.slice(0, 1)}</span>
+                  <span className="hidden sm:inline">{day.slice(0, 3)}</span>
+                </div>
+                <div
+                  className={`mt-0.5 sm:mt-1 text-[11px] sm:text-xs font-black flex items-center justify-center leading-none ${
+                    isToday
+                      ? 'w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-800'
+                  }`}
+                >
+                  {date.getUTCDate()}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Scrollable grid area (scrolls smoothly in landscape mode) ── */}
+      <div
+        ref={scrollContainerRef}
+        className="flex flex-1 overflow-y-auto overflow-x-hidden relative touch-pan-y"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
+        {/* 12-Hour Time Column */}
         <TimeColumn
           slotHeight={slotHeight}
-          headerHeight={DAY_HEADER_H}
           gridInterval={gridInterval}
           startHour={startHour}
-          endHour={endHour}
+          endHour={effectiveEndHour}
         />
 
-        {/* Days Columns */}
-        <div ref={gridContainerRef} className="flex flex-1 relative min-w-0 overflow-x-auto">
+        {/* Days Columns: Pure flex-1, 100% width, zero horizontal scrolling */}
+        <div
+          ref={gridContainerRef}
+          style={{ height: `${totalGridHeight}px`, minHeight: `${totalGridHeight}px` }}
+          className="flex flex-1 relative min-w-0"
+        >
           <CurrentTimeLine
             slotHeight={slotHeight}
-            headerHeight={DAY_HEADER_H}
             startHour={startHour}
-            endHour={endHour}
+            endHour={effectiveEndHour}
           />
 
           {visibleDays.map((day) => {
@@ -228,21 +357,20 @@ export default function Timetable({ onEventEdit, onCreateEvent }: TimetableProps
                 gridInterval={gridInterval}
                 isToday={isToday}
                 slotHeight={slotHeight}
-                headerHeight={DAY_HEADER_H}
                 startHour={startHour}
-                endHour={endHour}
+                endHour={effectiveEndHour}
                 onCardDragStart={handleCardDragStart}
                 draggingEventId={activeDrag?.event.id}
               />
             );
           })}
 
-          {/* Dashed Card following the mouse on the grid */}
+          {/* Dashed Card following the mouse/touch on the grid */}
           {activeDrag && dropTargetSlotStyle && (
             <div
               style={{
                 position: 'absolute',
-                top: `calc(${dropTargetSlotStyle.top} + ${DAY_HEADER_H}px)`,
+                top: dropTargetSlotStyle.top,
                 height: dropTargetSlotStyle.height,
                 left: dropTargetSlotStyle.left,
                 width: dropTargetSlotStyle.width,

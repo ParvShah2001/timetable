@@ -107,7 +107,15 @@ export function offsetWeek(
 /* ── Event helpers & Overlap layout ── */
 
 export function generateId(): string {
-  return crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Universal RFC4122 v4 UUID generator fallback for non-secure contexts (HTTP over LAN)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 /** Check if two events overlap on the same day */
@@ -242,4 +250,4 @@ export function importFromJSON(json: string): Record<WeekKey, TimetableEvent[]> 
 /* ── Default Grid constants ── */
 
 export const DEFAULT_START_HOUR = 7;  // 7:00 AM
-export const DEFAULT_END_HOUR = 22;   // 10:00 PM (15 active hours fits beautifully on any screen)
+export const DEFAULT_END_HOUR = 23;   // 11:00 PM (fits full active day including evening tasks)

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../store';
 import { formatWeekLabel, offsetWeek, weekKey, getWeekDates, dayIndex } from '../utils';
+import { exportTimetableToPDF } from '../utils/pdfExport';
 import type { DayOfWeek } from '../types';
 import { DAYS, WEEKDAYS } from '../types';
 
@@ -12,6 +13,20 @@ export default function WeekNavigator({ onClearWeek }: WeekNavigatorProps) {
   const { state, dispatch } = useApp();
   const { year, weekNumber } = state.currentWeek;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  const handleExportPDF = async () => {
+    setMenuOpen(false);
+    try {
+      setIsExportingPDF(true);
+      await exportTimetableToPDF(state);
+    } catch (err) {
+      console.error('Failed to export PDF:', err);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
 
   const handlePrevWeek = () => {
     const prev = offsetWeek(year, weekNumber, -1);
@@ -48,7 +63,7 @@ export default function WeekNavigator({ onClearWeek }: WeekNavigatorProps) {
   return (
     <div className="bg-white border-b border-gray-100 flex flex-col shrink-0 select-none">
       {/* Top Nav Row */}
-      <div className="flex items-center justify-between h-11 px-3 sm:px-5">
+      <div className="flex items-center justify-between h-10 max-h-[500px]:h-8 px-3 sm:px-5">
         {/* Previous / Next buttons & Week Label */}
         <div className="flex items-center gap-1 sm:gap-2">
           <button
@@ -93,7 +108,17 @@ export default function WeekNavigator({ onClearWeek }: WeekNavigatorProps) {
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-xl z-40 py-1 text-xs">
+              <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-100 rounded-xl shadow-xl z-40 py-1 text-xs">
+                <button
+                  onClick={handleExportPDF}
+                  disabled={isExportingPDF}
+                  className="w-full text-left px-4 py-2 font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100 disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  {isExportingPDF ? 'Generating PDF...' : 'Export Week as PDF'}
+                </button>
                 <button
                   onClick={handleDuplicateWeek}
                   className="w-full text-left px-4 py-2 font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"

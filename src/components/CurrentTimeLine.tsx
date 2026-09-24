@@ -3,14 +3,14 @@ import { formatTime, minutesToTime } from '../utils';
 
 interface CurrentTimeLineProps {
   slotHeight: number;
-  headerHeight: number;
+  headerHeight?: number;
   startHour: number;
   endHour: number;
 }
 
 export default function CurrentTimeLine({
   slotHeight,
-  headerHeight,
+  headerHeight = 0,
   startHour,
   endHour,
 }: CurrentTimeLineProps) {

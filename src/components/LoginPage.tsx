@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { SUPABASE_SQL_SETUP } from '../lib/supabase';
 
 export default function LoginPage() {
   const { isConfigured, signIn, signUp, updateConfig } = useAuth();
@@ -15,8 +14,6 @@ export default function LoginPage() {
   // Setup form states
   const [setupUrl, setSetupUrl] = useState('');
   const [setupKey, setSetupKey] = useState('');
-  const [showSqlModal, setShowSqlModal] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
 
   /* ── Handle Login / Registration ── */
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -60,11 +57,6 @@ export default function LoginPage() {
     updateConfig(setupUrl.trim(), setupKey.trim());
   };
 
-  const copySql = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SETUP);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2000);
-  };
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50/30 p-4 font-sans select-none">
@@ -76,9 +68,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-xl font-bold text-gray-900 tracking-tight">Timetable</h1>
           <p className="text-xs text-gray-500 mt-1">
-            {isConfigured
-              ? 'Each user gets their own dedicated, secure timetable'
-              : 'Connect your free Supabase database to get started'}
+            Your own dedicated secured timetable
           </p>
         </div>
 
@@ -136,20 +126,12 @@ export default function LoginPage() {
                 />
               </div>
 
-              <div className="pt-2 flex flex-col gap-2">
+              <div className="pt-2">
                 <button
                   type="submit"
                   className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-xl shadow-md transition-all"
                 >
                   Connect Database
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowSqlModal(true)}
-                  className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors"
-                >
-                  View Required Database SQL Setup
                 </button>
               </div>
             </form>
@@ -242,62 +224,10 @@ export default function LoginPage() {
                   <span>{mode === 'signin' ? 'Sign In to Timetable' : 'Create Free Account'}</span>
                 </button>
               </div>
-
-              <div className="pt-3 border-t border-gray-100 text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowSqlModal(true)}
-                  className="text-[11px] font-semibold text-gray-400 hover:text-gray-700 transition-colors"
-                >
-                  Supabase database table setup SQL
-                </button>
-              </div>
             </form>
           )}
         </div>
       </div>
-
-      {/* SQL Setup Modal */}
-      {showSqlModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h3 className="font-bold text-sm text-gray-900">Supabase SQL Table Schema</h3>
-              <button
-                onClick={() => setShowSqlModal(false)}
-                className="text-gray-400 hover:text-gray-700 p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-500 my-3">
-              Copy and run this SQL query once in your <strong>Supabase SQL Editor</strong> (supabase.com → your project → SQL Editor → Run):
-            </p>
-
-            <div className="flex-1 overflow-auto bg-gray-900 text-emerald-400 font-mono text-[11px] p-3.5 rounded-xl">
-              <pre>{SUPABASE_SQL_SETUP}</pre>
-            </div>
-
-            <div className="pt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={copySql}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow transition-colors"
-              >
-                {copiedSql ? '✓ Copied SQL!' : 'Copy SQL Script'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSqlModal(false)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

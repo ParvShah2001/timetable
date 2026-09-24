@@ -3,7 +3,7 @@ import { useApp } from '../store';
 import { useAuth } from '../context/AuthContext';
 import type { GridInterval, TimeRangePreset } from '../types';
 import { exportToJSON, importFromJSON } from '../utils';
-import { SUPABASE_SQL_SETUP } from '../lib/supabase';
+import { exportTimetableToPDF } from '../utils/pdfExport';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -11,10 +11,10 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const { state, dispatch, syncStatus, syncError, refreshEvents } = useApp();
-  const { user, isConfigured, signOut, resetConfig } = useAuth();
+  const { state, dispatch, syncStatus, syncError } = useApp();
+  const { user, signOut } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -24,13 +24,25 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
+  const handleExportPDF = async () => {
+    try {
+      setIsExportingPDF(true);
+      await exportTimetableToPDF(state);
+    } catch (err) {
+      console.error('Failed to export PDF:', err);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
   const handleGridInterval = (interval: GridInterval) => {
     dispatch({ type: 'UPDATE_SETTINGS', settings: { gridInterval: interval } });
   };
 
   const handleTimeRange = (preset: TimeRangePreset) => {
     let startHour = 7;
-    let endHour = 22;
+    let endHour = 23;
     if (preset === 'work') {
       startHour = 8;
       endHour = 18;
@@ -134,10 +146,10 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
         {/* Settings Body */}
         <div className="p-5 space-y-6 overflow-y-auto flex-1">
-          {/* Account & Database */}
+          {/* Account */}
           <section className="p-3.5 bg-gray-50/90 rounded-xl border border-gray-200/80 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Account & Database</span>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Account</span>
               <span
                 className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                   syncStatus === 'synced'
@@ -182,79 +194,20 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               )}
             </div>
 
-            <div className="pt-2 border-t border-gray-200/60 flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => refreshEvents()}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:text-blue-700 hover:bg-blue-50/60 rounded-lg transition-colors border border-gray-200/60 bg-white"
-              >
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Sync Now with Supabase
-                </span>
-                <span className="text-[10px] text-gray-400">Refresh</span>
-              </button>
-
+            <div className="pt-2 border-t border-gray-200/60">
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(SUPABASE_SQL_SETUP);
-                  setCopiedSql(true);
-                  setTimeout(() => setCopiedSql(false), 2500);
+                  signOut();
+                  onClose();
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:text-purple-700 hover:bg-purple-50/60 rounded-lg transition-colors border border-gray-200/60 bg-white"
+                className="w-full text-xs font-semibold text-red-600 hover:text-red-700 py-2 px-3 bg-red-50 hover:bg-red-100/80 rounded-lg border border-red-200 transition-colors flex items-center justify-center gap-1.5"
               >
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                  </svg>
-                  {copiedSql ? '✓ SQL Copied to Clipboard!' : 'Copy Supabase SQL Setup (Table & Realtime)'}
-                </span>
-              </button>
-
-              <a
-                href="https://supabase.com/dashboard"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-between px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:text-emerald-700 hover:bg-emerald-50/60 rounded-lg transition-colors border border-gray-200/60 bg-white"
-              >
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M21.362 9.354H12V.396a.396.396 0 0 0-.716-.233L2.2 12.604A.396.396 0 0 0 2.518 13.2h9.362v8.958a.396.396 0 0 0 .716.233l9.084-12.441a.396.396 0 0 0-.318-.596z" />
-                  </svg>
-                  Supabase Dashboard (Manage Users & Data)
-                </span>
-                <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
-              </a>
-
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm('Disconnect Supabase credentials and clear saved API keys on this browser?')) {
-                      resetConfig();
-                      onClose();
-                    }
-                  }}
-                  className="flex-1 text-[11px] font-semibold text-gray-600 hover:text-gray-900 py-1.5 px-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                >
-                  Change Keys
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    signOut();
-                    onClose();
-                  }}
-                  className="flex-1 text-[11px] font-semibold text-red-600 hover:text-red-700 py-1.5 px-2 bg-red-50 hover:bg-red-100/80 rounded-lg border border-red-200 transition-colors"
-                >
-                  Sign Out
-                </button>
-              </div>
+                Sign Out
+              </button>
             </div>
           </section>
 
@@ -299,34 +252,21 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             </label>
             <div className="space-y-1.5">
               {[
-                {
-                  id: 'active',
-                  title: 'Active Day (7:00 AM – 10:00 PM)',
-                  desc: 'Recommended: Fits 100% of day on single screen without scrolling.',
-                },
-                {
-                  id: 'work',
-                  title: 'Work Hours (8:00 AM – 6:00 PM)',
-                  desc: 'Spacious slots, best for office & business schedules.',
-                },
-                {
-                  id: 'full',
-                  title: 'Full Day (6:00 AM – 11:00 PM)',
-                  desc: 'All 17 hours shown from early morning to late evening.',
-                },
+                { id: 'active', title: 'Active Day (7:00 AM – 11:00 PM)' },
+                { id: 'work', title: 'Work Hours (8:00 AM – 6:00 PM)' },
+                { id: 'full', title: 'Full Day (6:00 AM – 11:00 PM)' },
               ].map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
                   onClick={() => handleTimeRange(opt.id as TimeRangePreset)}
-                  className={`w-full text-left p-3 rounded-xl border text-xs transition-all ${
+                  className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs font-bold transition-all ${
                     state.settings.timeRangePreset === opt.id
-                      ? 'border-blue-500 bg-blue-50/60 ring-1 ring-blue-500/20'
-                      : 'border-gray-200 hover:bg-gray-50'
+                      ? 'border-blue-500 bg-blue-50/60 text-blue-700 ring-1 ring-blue-500/20'
+                      : 'border-gray-200 text-gray-800 hover:bg-gray-50'
                   }`}
                 >
-                  <div className="font-bold text-gray-800">{opt.title}</div>
-                  <div className="text-[11px] text-gray-500 mt-0.5">{opt.desc}</div>
+                  {opt.title}
                 </button>
               ))}
             </div>
@@ -339,7 +279,7 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               <div>
                 <div className="text-xs font-bold text-gray-800">Side-by-side Overlaps</div>
                 <div className="text-[11px] text-gray-500">
-                  Allow multiple events at the same time and display them side-by-side.
+                  Allow multiple events at the same time
                 </div>
               </div>
               <button
@@ -362,7 +302,7 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               <div>
                 <div className="text-xs font-bold text-gray-800">Show Weekends</div>
                 <div className="text-[11px] text-gray-500">
-                  Include Saturday and Sunday in the weekly timetable.
+                  Include Saturday and Sunday
                 </div>
               </div>
               <button
@@ -386,35 +326,49 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
               Backup & Data
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
               <button
                 type="button"
-                onClick={handleExport}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                onClick={handleExportPDF}
+                disabled={isExportingPDF}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg shadow-xs transition-all disabled:opacity-50"
               >
-                <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
-                Export JSON
+                {isExportingPDF ? 'Generating PDF...' : 'Export Timetable as PDF'}
               </button>
 
-              <input
-                type="file"
-                accept=".json"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={handleImportClick}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Import JSON
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export JSON
+                </button>
+
+                <input
+                  type="file"
+                  accept=".json"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleImportClick}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Import JSON
+                </button>
+              </div>
             </div>
           </section>
         </div>

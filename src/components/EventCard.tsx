@@ -46,8 +46,7 @@ export default function EventCard({
 
   const top = ((displayStart - startHour * 60) / 60) * slotHeight;
   const height = ((displayEnd - displayStart) / 60) * slotHeight;
-  const duration = displayEnd - displayStart;
-  const minH = Math.max(32, (gridInterval / 60) * slotHeight);
+  const minH = Math.max(20, (gridInterval / 60) * slotHeight);
   const cardPx = Math.max(minH, height);
 
   // Side-by-side columns for overlapping events
@@ -120,11 +119,11 @@ export default function EventCard({
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  /* ── Card pointer down to drag (clicking card does NOT open edit modal) ── */
+  /* ── Card pointer down: tap to open edit modal, or drag to move ── */
   const handleCardPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || isResizing) return;
-    // If user clicked the edit button or resize handle, don't initiate drag
-    if ((e.target as HTMLElement).closest('[data-edit-btn], [data-resize-handle]')) return;
+    // If user clicked resize handle, don't initiate drag or tap-edit
+    if ((e.target as HTMLElement).closest('[data-resize-handle]')) return;
 
     isPointerDownRef.current = true;
     const startX = e.clientX;
@@ -147,6 +146,9 @@ export default function EventCard({
     };
 
     const handleUp = () => {
+      if (isPointerDownRef.current) {
+        onEdit(event);
+      }
       isPointerDownRef.current = false;
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
@@ -156,8 +158,8 @@ export default function EventCard({
     window.addEventListener('pointerup', handleUp);
   };
 
-  const isVerySmall = cardPx < 30;
-  const isSmall = cardPx >= 30 && cardPx < 50;
+  const isVerySmall = cardPx < 26;
+  const isSmall = cardPx >= 26 && cardPx < 42;
 
   return (
     <div
@@ -175,7 +177,7 @@ export default function EventCard({
         zIndex: isResizing ? 30 : 10,
         opacity: isDragging ? 0.3 : 1,
       }}
-      className={`group rounded-lg shadow-sm border border-gray-200/70 overflow-hidden flex flex-col select-none touch-none cursor-grab active:cursor-grabbing transition-shadow hover:shadow-md ${
+      className={`group rounded-lg shadow-sm border border-gray-200/70 overflow-hidden flex flex-col select-none touch-none cursor-pointer active:cursor-grabbing transition-shadow hover:shadow-md ${
         isResizing ? 'ring-2 ring-blue-500 shadow-lg' : ''
       }`}
       onPointerDown={handleCardPointerDown}
@@ -197,74 +199,26 @@ export default function EventCard({
         </div>
       )}
 
-      {/* Card Header & Content */}
-      <div className="flex-1 px-1.5 py-1 overflow-hidden flex flex-col justify-between leading-tight relative">
-        <div className="relative w-full">
-          {/* Title: ALWAYS fully readable, never truncated with ... */}
-          <div
-            className={`font-bold text-gray-900 break-words whitespace-normal leading-snug pr-4.5 ${
-              isVerySmall ? 'text-[10px]' : isSmall ? 'text-[11px]' : 'text-xs'
-            }`}
-            title={event.title}
-          >
-            {event.title}
-          </div>
-
-          {/* DEDICATED EDIT BUTTON (Pencil icon) */}
-          <button
-            data-edit-btn
-            type="button"
-            title="Edit event"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onEdit(event);
-            }}
-            className="absolute top-0 right-0 p-0.5 text-gray-400 hover:text-gray-900 hover:bg-black/10 active:bg-black/20 rounded transition-colors shrink-0 cursor-pointer"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.2}
-                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-              />
-            </svg>
-          </button>
+      {/* Card Header & Content (Tap to edit) */}
+      <div className="flex-1 p-1 sm:p-1.5 overflow-hidden flex flex-col justify-start leading-tight">
+        {/* Title: ALWAYS fully readable, never truncated with ... */}
+        <div
+          className={`font-bold text-gray-900 break-words whitespace-normal leading-snug ${
+            isVerySmall ? 'text-[9px]' : isSmall ? 'text-[10px]' : 'text-xs'
+          }`}
+          title={event.title}
+        >
+          {event.title}
         </div>
 
-        {/* 12-Hour Time */}
-        {!isVerySmall && (
-          <div
-            className={`font-semibold text-gray-600 truncate mt-0.5 ${
-              isSmall ? 'text-[9px]' : 'text-[10px]'
-            }`}
-          >
-            {formatTimeRange(
-              resizePreview?.startTime || event.startTime,
-              resizePreview?.endTime || event.endTime
-            )}
-          </div>
-        )}
-
-        {/* Location & Category for medium/large cards */}
-        {!isVerySmall && !isSmall && (event.location || event.category) && (
-          <div className="flex items-center gap-1.5 text-[9px] text-gray-500 truncate mt-1">
-            {event.location && (
-              <span className="truncate flex items-center font-medium">
-                <svg className="w-2.5 h-2.5 mr-0.5 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                </svg>
-                {event.location}
-              </span>
-            )}
-            {event.category && (
-              <span className="px-1.5 py-[1px] bg-white/80 rounded text-[8px] font-bold text-gray-600 border border-gray-200/60 shadow-2xs">
-                {event.category}
-              </span>
-            )}
-          </div>
-        )}
+        {/* 12-Hour Time: Full time string, wrapped if needed, never truncated with ellipsis */}
+        <div
+          className={`font-semibold text-gray-600 mt-0.5 leading-snug break-words ${
+            isVerySmall ? 'text-[8px]' : isSmall ? 'text-[9px]' : 'text-[10px]'
+          }`}
+        >
+          {formatTime(resizePreview?.startTime || event.startTime)} – {formatTime(resizePreview?.endTime || event.endTime)}
+        </div>
       </div>
 
       {/* Bottom resize handle */}

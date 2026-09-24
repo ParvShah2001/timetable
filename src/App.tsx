@@ -72,7 +72,7 @@ function AppContent() {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-gray-50 overflow-hidden font-sans">
+    <div className="h-[100dvh] w-screen flex flex-col bg-gray-50 overflow-hidden font-sans pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       <Header
         onOpenSearch={() => setSearchOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -81,25 +81,13 @@ function AppContent() {
 
       <WeekNavigator onClearWeek={handleClearWeek} />
 
-      {/* Main Timetable Fill-Screen Workspace */}
-      <main className="flex-1 overflow-hidden p-1 sm:p-2.5 relative flex flex-col">
+      {/* Main Timetable Fill-Screen Workspace (Zero scroll, safe corners) */}
+      <main className="flex-1 overflow-hidden p-1 sm:p-2 relative flex flex-col">
         <Timetable
           onEventEdit={handleEditEvent}
           onCreateEvent={handleCreateEvent}
         />
       </main>
-
-      {/* Floating Add Event Button */}
-      <button
-        onClick={handleFloatingAdd}
-        className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 w-12 h-12 sm:w-13 sm:h-13 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl hover:shadow-2xl transition-all flex items-center justify-center z-30 active:scale-95"
-        title="Add Event"
-        aria-label="Add Event"
-      >
-        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
 
       {/* Reassuring Feedback Toast Message */}
       {state.toastMessage && (
