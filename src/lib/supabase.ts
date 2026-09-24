@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { TimetableEvent, WeekKey, DayOfWeek, Category } from '../types';
+import { SUPABASE_CONFIG } from '../config';
 
 const STORAGE_URL_KEY = 'timetable_supabase_url';
 const STORAGE_ANON_KEY = 'timetable_supabase_anon_key';
@@ -10,8 +11,8 @@ export interface SupabaseConfig {
 }
 
 export function getStoredConfig(): SupabaseConfig {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || SUPABASE_CONFIG.url || '';
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_CONFIG.anonKey || '';
 
   const storedUrl = localStorage.getItem(STORAGE_URL_KEY) || '';
   const storedKey = localStorage.getItem(STORAGE_ANON_KEY) || '';
