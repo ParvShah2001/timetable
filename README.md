@@ -14,6 +14,10 @@
 
 [Live Demo](https://parvshah2001.github.io/timetable/) • [Report Bug](https://github.com/ParvShah2001/timetable/issues) • [Request Feature](https://github.com/ParvShah2001/timetable/issues)
 
+<br />
+
+<img src="docs/images/social-preview.png" alt="Timetable Social Preview Card" width="100%" />
+
 </div>
 
 ---
