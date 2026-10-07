@@ -1,7 +1,30 @@
 {
   "name": "timetable",
-  "private": true,
   "version": "1.0.0",
+  "description": "A sleek, responsive, single-screen weekly timetable and scheduling web application with real-time Supabase sync, drag-and-drop planning, and high-resolution PDF export.",
+  "author": "Parv Shah <https://github.com/ParvShah2001>",
+  "license": "MIT",
+  "homepage": "https://parvshah2001.github.io/timetable/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ParvShah2001/timetable.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ParvShah2001/timetable/issues"
+  },
+  "keywords": [
+    "timetable",
+    "schedule",
+    "planner",
+    "calendar",
+    "react",
+    "typescript",
+    "tailwind-css",
+    "supabase",
+    "pdf-export",
+    "drag-and-drop"
+  ],
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
